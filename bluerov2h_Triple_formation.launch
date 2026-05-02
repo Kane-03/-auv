@@ -1,0 +1,181 @@
+<?xml version="1.0"?>
+<!--
+  bluerov2h_Triple_formation.launch
+  三机编队仿真启动文件
+    - Robot 1 (bluerov2h_origin1): 领航者，跟踪正弦波轨迹并广播位姿
+    - Robot 2 (bluerov2h_origin2): 跟随者，保持队形偏移 (-2m, +1m)
+    - Robot 3 (bluerov2h_origin3): 跟随者，保持队形偏移 (-2m, -1m)
+
+  队形示意（俯视，向右运动）:
+         R1 →
+    R2 (x-2, y+1)
+    R3 (x-2, y-1)
+
+  [修改] Robot2/3 初始生成位置与控制器 FORMATION_OFFSETS(-2, ±1) 对齐：
+    Robot2: x = 0 + (-2) = -2, y = 0 + 1  = 1
+    Robot3: x = 0 + (-2) = -2, y = 0 + (-1) = -1
+-->
+<launch>
+    <!-- ===== 公共参数 ===== -->
+    <arg name="gui"        default="true"/>
+    <arg name="paused"     default="false"/>
+    <arg name="world_name" default="$(find uuv_gazebo_worlds)/worlds/ocean_waves.world"/>
+    <arg name="debug"      default="false"/>
+    <arg name="verbose"    default="false"/>
+
+    <!-- ===== 机器人命名空间 ===== -->
+    <arg name="namespace1" default="bluerov2h_origin1"/>
+    <arg name="namespace2" default="bluerov2h_origin2"/>
+    <arg name="namespace3" default="bluerov2h_origin3"/>
+
+    <!-- ===== 机器人初始位置 ===== -->
+    <!-- R1 领航者：起点 (0, 0) -->
+    <arg name="x1"   default="0.0"/>
+    <arg name="y1"   default="0.0"/>
+    <arg name="z1"   default="0.0"/>
+    <arg name="yaw1" default="0.0"/>
+
+    <!-- R2 跟随者：与控制器目标偏移 (-2, +1) 对齐 → (23, +1) -->
+    <arg name="x2"   default="-2.0"/>
+    <arg name="y2"   default="1.0"/>
+    <arg name="z2"   default="0.0"/>
+    <arg name="yaw2" default="0.0"/>
+
+    <!-- R3 跟随者：与控制器目标偏移 (-2, -1) 对齐 → (23, -1) -->
+    <arg name="x3"   default="-2.0"/>
+    <arg name="y3"   default="-1.0"/>
+    <arg name="z3"   default="0.0"/>
+    <arg name="yaw3" default="0.0"/>
+
+    <!-- ===== Gazebo 世界 ===== -->
+    <include file="$(find gazebo_ros)/launch/empty_world.launch">
+        <arg name="world_name"   value="$(arg world_name)"/>
+        <arg name="paused"       value="$(arg paused)"/>
+        <arg name="use_sim_time" value="true"/>
+        <arg name="gui"          value="$(arg gui)"/>
+        <arg name="headless"     value="false"/>
+        <arg name="debug"        value="$(arg debug)"/>
+        <arg name="verbose"      value="$(arg verbose)"/>
+    </include>
+
+    <!-- NED 坐标系 -->
+    <include file="$(find uuv_assistants)/launch/publish_world_ned_frame.launch"/>
+
+    <!-- 世界模型（海底、边界面） -->
+    <node name="publish_world_models"
+          pkg="uuv_assistants"
+          type="publish_world_models.py"
+          output="screen">
+        <rosparam subst_value="true">
+            meshes:
+                heightmap:
+                    mesh: package://uuv_gazebo_worlds/models/sand_heightmap/meshes/heightmap.dae
+                    model: sand_heightmap
+                seafloor:
+                    plane: [2000, 2000, 0.1]
+                    pose:
+                        position: [0, 0, -100]
+                north:
+                    plane: [0.1, 2000, 100]
+                    pose:
+                        position: [1000, 0, -50]
+                south:
+                    plane: [0.1, 2000, 100]
+                    pose:
+                        position: [-1000, 0, -50]
+                west:
+                    plane: [2000, 0.1, 100]
+                    pose:
+                        position: [0, -1000, -50]
+                east:
+                    plane: [2000, 0.1, 100]
+                    pose:
+                        position: [0, 1000, -50]
+        </rosparam>
+    </node>
+
+    <!-- ===== 机器人 URDF 描述 ===== -->
+    <param name="/$(arg namespace1)/robot_description"
+           command="$(find xacro)/xacro '$(find bluerov2h_gazebo)/urdf/bluerov2h_origin_gazebo.xacro' --inorder
+                    debug:=$(arg debug)
+                    namespace:=$(arg namespace1)
+                    inertial_reference_frame:=world"/>
+
+    <param name="/$(arg namespace2)/robot_description"
+           command="$(find xacro)/xacro '$(find bluerov2h_gazebo)/urdf/bluerov2h_origin_gazebo.xacro' --inorder
+                    debug:=$(arg debug)
+                    namespace:=$(arg namespace2)
+                    inertial_reference_frame:=world"/>
+
+    <param name="/$(arg namespace3)/robot_description"
+           command="$(find xacro)/xacro '$(find bluerov2h_gazebo)/urdf/bluerov2h_origin_gazebo.xacro' --inorder
+                    debug:=$(arg debug)
+                    namespace:=$(arg namespace3)
+                    inertial_reference_frame:=world"/>
+
+    <!-- ===== 生成机器人模型 ===== -->
+    <node name="urdf_spawner1" pkg="uuv_descriptions" type="spawn_model"
+          respawn="false" output="screen"
+          args="-urdf -x $(arg x1) -y $(arg y1) -z $(arg z1)
+                -R 0 -P 0 -Y $(arg yaw1)
+                -model $(arg namespace1)
+                -param /$(arg namespace1)/robot_description"/>
+
+    <node name="urdf_spawner2" pkg="uuv_descriptions" type="spawn_model"
+          respawn="false" output="screen"
+          args="-urdf -x $(arg x2) -y $(arg y2) -z $(arg z2)
+                -R 0 -P 0 -Y $(arg yaw2)
+                -model $(arg namespace2)
+                -param /$(arg namespace2)/robot_description"/>
+
+    <node name="urdf_spawner3" pkg="uuv_descriptions" type="spawn_model"
+          respawn="false" output="screen"
+          args="-urdf -x $(arg x3) -y $(arg y3) -z $(arg z3)
+                -R 0 -P 0 -Y $(arg yaw3)
+                -model $(arg namespace3)
+                -param /$(arg namespace3)/robot_description"/>
+
+    <!-- ===== 状态发布器 ===== -->
+    <node name="robot_state_publisher1" pkg="robot_state_publisher"
+          type="robot_state_publisher" respawn="true" output="screen">
+        <remap from="robot_description" to="/$(arg namespace1)/robot_description"/>
+    </node>
+    <node name="robot_state_publisher2" pkg="robot_state_publisher"
+          type="robot_state_publisher" respawn="true" output="screen">
+        <remap from="robot_description" to="/$(arg namespace2)/robot_description"/>
+    </node>
+    <node name="robot_state_publisher3" pkg="robot_state_publisher"
+          type="robot_state_publisher" respawn="true" output="screen">
+        <remap from="robot_description" to="/$(arg namespace3)/robot_description"/>
+    </node>
+
+    <!-- ===== 编队控制节点 ===== -->
+
+    <!-- R1 领航者 PID（跟踪轨迹 + 发布位姿） -->
+    <node pkg="cooperative_dmpc" type="leader_pid_node.py"
+          name="leader_pid_node" output="screen">
+        <param name="robot_id"      value="$(arg namespace1)"/>
+        <param name="traj_center_x" value="0.0"/>
+        <param name="traj_center_y" value="-1.0"/>
+    </node>
+
+    <!-- R2 跟随者 PID -->
+    <node pkg="cooperative_dmpc" type="follower_pid_node.py"
+          name="follower_pid_node_2" output="screen">
+        <param name="robot_id"    value="$(arg namespace2)"/>
+        <param name="robot_index" value="2"/>
+    </node>
+
+    <!-- R3 跟随者 PID -->
+    <node pkg="cooperative_dmpc" type="follower_pid_node.py"
+          name="follower_pid_node_3" output="screen">
+        <param name="robot_id"    value="$(arg namespace3)"/>
+        <param name="robot_index" value="3"/>
+    </node>
+
+    <!-- 同步服务
+    <node pkg="cooperative_dmpc" type="sync_server.py" name="sync_server">
+        <param name="robot_count" value="3"/>
+    </node> -->
+
+</launch>
